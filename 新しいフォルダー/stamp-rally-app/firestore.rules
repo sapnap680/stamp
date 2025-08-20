@@ -1,0 +1,17 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // スタンプラリーデータのルール
+    match /stamp_rallies/{userId} {
+      // LINEのuserIdを使用する場合（LIFF認証）
+      // 注意: 本番環境では適切な認証を実装
+      allow read, write: if true;
+    }
+    
+    // その他のドキュメントは拒否
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
