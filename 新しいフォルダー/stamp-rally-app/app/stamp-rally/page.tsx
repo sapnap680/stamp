@@ -22,6 +22,7 @@ const venues = [
 	{ name: "大東文化大学東松山キャンパス", lat: 36.0012635, lon: 139.3699917 },
 	{ name: "青山学院大学相模原キャンパス", lat: 35.5672268, lon: 139.4027009 },
 	{ name: "家", lat: 35.6584102, lon: 139.6084961 },
+	{ name: "学連事務所", lat: 35.6555607, lon: 139.6994733 },
 ];
 const maxDistance = 1000;
 
@@ -102,6 +103,7 @@ export default function StampRallyPage() {
 
 	// 履歴の折りたたみ
 	const [historyOpen, setHistoryOpen] = useState(false);
+	const [scheduleOpen, setScheduleOpen] = useState(false);
 
 	// 受取済み景品のトラッキング
 	const [claimedPrizeNumbers, setClaimedPrizeNumbers] = useState<number[]>([]);
@@ -410,16 +412,6 @@ export default function StampRallyPage() {
 	return (
 		<>
 			<Script src="https://static.line-scdn.net/liff/edge/2/sdk.js" strategy="afterInteractive" onLoad={() => setLiffReady(true)} />
-			{/* 総合進捗バー */}
-			<div style={{ maxWidth: 420, margin: "10px auto 0", padding: "0 14px" }}>
-				<div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, color: "#866522", fontWeight: 700 }}>
-					<span>進捗</span>
-					<span style={{ marginLeft: "auto" }}>{stampedNumbers.length}/{totalStamps}</span>
-				</div>
-				<div style={{ height: 10, background: "#f1f3f5", borderRadius: 6, overflow: "hidden", boxShadow: "inset 0 1px 2px #0001" }}>
-					<div style={{ width: `${Math.min(100, Math.round((stampedNumbers.length/totalStamps)*100))}%`, height: "100%", background: "linear-gradient(90deg,#ffd700,#a97b2c)", transition: "width .3s ease" }} />
-				</div>
-			</div>
 			<header>
 				<Image src="/autumn_logo.png" className="logo" alt="AUTUMN LEAGUE LOGO" width={110} height={110} />
 				<div className="main-title">AUTUMN LEAGUE</div>
@@ -429,6 +421,55 @@ export default function StampRallyPage() {
 
 			{/* 獲得履歴の上に進捗まとめと最も行った会場を配置 */}
 			<div style={{ maxWidth: 600, margin: "0 auto", padding: "0 12px" }}>
+				{/* 日程表表示エリア */}
+				{scheduleOpen && (
+					<div className="schedule-section">
+						<h3 style={{ color: "#a97b2c", marginBottom: "12px", fontSize: "1.1em" }}>📅 試合日程</h3>
+						<div className="schedule-grid">
+							<div className="schedule-item">
+								<span className="schedule-date">8/27-30</span>
+								<span className="schedule-venue">大田区総合体育館</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">8/31-9/3</span>
+								<span className="schedule-venue">筑波大学</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">9/6-7</span>
+								<span className="schedule-venue">日本体育大学</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">9/10-14</span>
+								<span className="schedule-venue">明治大学・駒沢オリンピック</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">9/27-28</span>
+								<span className="schedule-venue">白鷗大学</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">10/4-5</span>
+								<span className="schedule-venue">国立代々木競技場</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">10/11-13</span>
+								<span className="schedule-venue">専修大学・立川立飛</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">10/18-19</span>
+								<span className="schedule-venue">東海大学・大東文化</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">10/25-26</span>
+								<span className="schedule-venue">青山学院大学</span>
+							</div>
+							<div className="schedule-item">
+								<span className="schedule-date">11/1-2</span>
+								<span className="schedule-venue">決勝戦</span>
+							</div>
+						</div>
+					</div>
+				)}
+				
 				{mostVisitedVenue && (
 					<div className="most-visited">
 						<span>最も行った会場: </span>
@@ -495,6 +536,26 @@ export default function StampRallyPage() {
 						)}
 					</div>
 				))}
+				{/* 日程表ボタン - スタンプ22の右側 */}
+				<button 
+					className="schedule-btn-in-grid" 
+					onClick={() => setScheduleOpen(!scheduleOpen)}
+				>
+					📅
+					<br />
+					日程
+				</button>
+			</div>
+			
+			{/* 総合進捗バー - スタンプの下に配置 */}
+			<div style={{ maxWidth: 420, margin: "20px auto 0", padding: "0 14px" }}>
+				<div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, color: "#866522", fontWeight: 700 }}>
+					<span>進捗</span>
+					<span style={{ marginLeft: "auto" }}>{stampedNumbers.length}/{totalStamps}</span>
+				</div>
+				<div style={{ height: 10, background: "#f1f3f5", borderRadius: 6, overflow: "hidden", boxShadow: "inset 0 1px 2px #0001" }}>
+					<div style={{ width: `${Math.min(100, Math.round((stampedNumbers.length/totalStamps)*100))}%`, height: "100%", background: "linear-gradient(90deg,#ffd700,#a97b2c)", transition: "width .3s ease" }} />
+				</div>
 			</div>
 			{/* エラー/通知はモーダル風に */}
 			{outputMessage && (
@@ -594,6 +655,20 @@ export default function StampRallyPage() {
 				.staff-confirm-container { margin: 24px auto 0 auto; max-width: 420px; background: #fffbe7; border: 2px solid #ffd700cc; border-radius: 12px; box-shadow: 0 4px 16px #ffd70022; padding: 28px 20px 22px 20px; color: #a97c2c; font-size: 1.22em; font-weight: bold; text-align: center; z-index: 12; }
 				.staff-confirm-container .confirm-label { margin-bottom: 14px; font-size: 1.1em; font-weight: bold; color: #b88c00; letter-spacing: 1px; text-shadow: 0 2px 12px #fffbe7; line-height: 1.6; }
 				.staff-confirm-container button { margin-top: 10px; background: #00c300; color: #fff; font-size: 1.1em; border-radius: 8px; border: none; padding: 10px 28px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 12px #c3e6cb88; }
+				/* 日程表 */
+				.schedule-section { margin: 20px 0; padding: 16px; background: #fffbe7; border-radius: 10px; border: 1px solid #ffd70044; }
+				.schedule-grid { display: grid; gap: 8px; }
+				.schedule-item { display: flex; justify-content: space-between; align-items: center; padding: 8px 12px; background: #fff; border-radius: 6px; border-left: 3px solid #ffd700; font-size: 0.9em; }
+				.schedule-date { font-weight: bold; color: #a97b2c; min-width: 80px; }
+				.schedule-venue { color: #333; }
+				.schedule-btn-in-grid { width: 54px; height: 54px; border-radius: 50%; border: 2px solid #a97b2c; display: flex; flex-direction: column; align-items: center; justify-content: center; font-weight: bold; font-size: 12px; background-color: #fffbe7; color: #a97b2c; cursor: pointer; box-shadow: 0 2px 8px #0001; transition: all 0.2s; }
+				.schedule-btn-in-grid:hover { background-color: #ffd700; color: #fff; transform: scale(1.05); }
+				@media (max-width: 480px) {
+					.schedule-item { flex-direction: column; align-items: flex-start; gap: 4px; }
+					.schedule-date { min-width: auto; }
+					.schedule-btn-in-grid { width: 56px; height: 56px; }
+				}
+				
 				/* トースト通知 */
 				.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; background: #fff; color: #333; border-radius: 10px; box-shadow: 0 10px 30px #0002; z-index: 50; padding: 12px 14px; border: 1px solid #eee; min-width: 260px; max-width: 90%; }
 				.toast-body { font-weight: 600; }
