@@ -534,7 +534,6 @@ export default function StampRallyPage() {
 			<div style={{ textAlign: "center", marginTop: "40px" }}>
 				<Image src="/autumn_logo.png" alt="logo" width={100} height={100} />
 				<h2>LINE認証中...</h2>
-				<Script src="https://static.line-scdn.net/liff/edge/2/sdk.js" strategy="afterInteractive" onLoad={() => setLiffReady(true)} />
 				<div style={{ marginTop: 12 }}>
 					<button onClick={retryLogin} style={{ padding: "8px 14px", borderRadius: 6, background: "#00c300", color: "#fff", fontWeight: 700 }}>ログインを再試行</button>
 				</div>
