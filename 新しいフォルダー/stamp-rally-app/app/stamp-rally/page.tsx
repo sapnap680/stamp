@@ -122,29 +122,23 @@ export default function StampRallyPage() {
 	// 特別スタンプの判定を最適化
 	const specialStampSet = useMemo(() => new Set(specialStampNumbers), []);
 
-	// 最もシンプルなLIFF初期化
 	useEffect(() => {
 		if (!liffReady) return;
-		
 		async function initLiff() {
 			try {
 				await window.liff.init({ liffId });
-				
 				if (!window.liff.isLoggedIn()) {
 					window.liff.login();
 					return;
 				}
-				
 				const prof = await window.liff.getProfile();
 				setProfile(prof);
 				setLiffLoading(false);
 			} catch (e: any) {
-				console.error("LIFF初期化エラー:", e);
-				setLiffError("LINEログインに失敗しました。LINEアプリ内で開いてください。");
+				setLiffError("LINEログインに失敗しました。アプリを再読み込みしてください。");
 				setLiffLoading(false);
 			}
 		}
-		
 		initLiff();
 	}, [liffReady]);
 
@@ -488,30 +482,7 @@ export default function StampRallyPage() {
 
 	if (liffError) {
 		return (
-			<div style={{ textAlign: "center", marginTop: "40px", padding: "20px" }}>
-				<Image src="/autumn_logo.png" alt="logo" width={100} height={100} />
-				<div style={{ color: "red", fontWeight: "bold", marginTop: "20px" }}>{liffError}</div>
-				<div style={{ marginTop: "15px", fontSize: "14px", color: "#666" }}>
-					<button 
-						onClick={() => {
-							setLiffError("");
-							setLiffLoading(true);
-							window.location.reload();
-						}} 
-						style={{ 
-							padding: "10px 20px", 
-							borderRadius: "6px", 
-							background: "#00c300", 
-							color: "#fff", 
-							border: "none",
-							fontWeight: "bold",
-							cursor: "pointer"
-						}}
-					>
-						再読み込み
-					</button>
-				</div>
-			</div>
+			<div style={{ color: "red", fontWeight: "bold", textAlign: "center", marginTop: "40px" }}>{liffError}</div>
 		);
 	}
 	if (liffLoading || !profile) {
