@@ -122,30 +122,46 @@ export default function StampRallyPage() {
 	// 特別スタンプの判定を最適化
 	const specialStampSet = useMemo(() => new Set(specialStampNumbers), []);
 
-	// 元の動作していたLIFF初期化
+	// 確実なLIFF初期化
 	useEffect(() => {
 		if (!liffReady) return;
 		
 		async function initLiff() {
 			try {
+				// LIFF SDKの読み込み確認
+				if (typeof window === 'undefined' || !window.liff) {
+					setLiffError("LIFF SDKが読み込まれていません。");
+					setLiffLoading(false);
+					return;
+				}
+				
+				// LIFF初期化
 				await window.liff.init({ liffId });
 				
+				// ログイン状態確認
 				if (!window.liff.isLoggedIn()) {
+					// シンプルなログイン（リダイレクトURIは自動設定）
 					window.liff.login();
 					return;
 				}
 				
+				// プロフィール取得
 				const prof = await window.liff.getProfile();
 				setProfile(prof);
 				setLiffLoading(false);
 			} catch (e: any) {
 				console.error("LIFF初期化エラー:", e);
-				setLiffError("LINEログインに失敗しました。アプリを再読み込みしてください。");
+				setLiffError("LINEログインに失敗しました。LINEアプリ内で開いているか確認してください。");
 				setLiffLoading(false);
 			}
 		}
 		
-		initLiff();
+		// 少し遅延させてから初期化
+		const timer = setTimeout(() => {
+			initLiff();
+		}, 100);
+		
+		return () => clearTimeout(timer);
 	}, [liffReady]);
 
 	useEffect(() => {
