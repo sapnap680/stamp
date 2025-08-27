@@ -1,12 +1,12 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState, useMemo } from "react";
 import Image from "next/image";
 import Script from "next/script";
 import { db } from "@/src/lib/firebase";
 import { doc, getDoc, setDoc, updateDoc, arrayUnion } from "firebase/firestore";
 
-const totalStamps = 22;
+const totalStamps = 23;
 const venues = [
 	{ name: "大田区総合体育館", lat: 35.5643207, lon: 139.7278943 },
 	{ name: "筑波大学", lat: 36.1025753, lon: 140.1038015 },
@@ -26,7 +26,7 @@ const venues = [
 ];
 const maxDistance = 1000;
 
-const specialStampNumbers = [3, 7, 12, 22];
+const specialStampNumbers = [3, 7, 12, 22, 23];
 const adminPassword = "3557";
 
 const stampDateRestrictions: { [key: number]: { end: string } } = {
@@ -52,6 +52,7 @@ const stampDateRestrictions: { [key: number]: { end: string } } = {
 	20: { end: "2025-10-26" },
 	21: { end: "2025-11-01" },
 	22: { end: "2025-11-02" },
+	23: { end: "2025-10-10" },
 };
 
 const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
@@ -68,6 +69,7 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
 declare global {
 	interface Window {
 		liff: any;
+		disableDuplicateCheck?: boolean;
 	}
 }
 const liffId = "2007663892-mQOQRy2z";
@@ -96,10 +98,8 @@ export default function StampRallyPage() {
 	// Firestore同期
 	const [syncing, setSyncing] = useState(false);
 
-	// 景品確認用／スワイプで閉じる
+	// 景品確認用
 	const [currentPrizeNumber, setCurrentPrizeNumber] = useState<number | null>(null);
-	const touchStartXRef = useRef<number | null>(null);
-	const hasSwipedRef = useRef(false);
 
 	// 履歴の折りたたみ
 	const [historyOpen, setHistoryOpen] = useState(false);
@@ -107,6 +107,20 @@ export default function StampRallyPage() {
 
 	// 受取済み景品のトラッキング
 	const [claimedPrizeNumbers, setClaimedPrizeNumbers] = useState<number[]>([]);
+	
+	// 受取済み状態をlocalStorageから読み込み
+	useEffect(() => {
+		const claimed = JSON.parse(localStorage.getItem("claimed_prizes_v1") || "[]");
+		setClaimedPrizeNumbers(claimed);
+	}, []);
+	
+	// 受取済み状態をlocalStorageに保存
+	useEffect(() => {
+		localStorage.setItem("claimed_prizes_v1", JSON.stringify(claimedPrizeNumbers));
+	}, [claimedPrizeNumbers]);
+
+	// 特別スタンプの判定を最適化
+	const specialStampSet = useMemo(() => new Set(specialStampNumbers), []);
 
 	useEffect(() => {
 		if (!liffReady) return;
@@ -193,10 +207,34 @@ export default function StampRallyPage() {
 				const snap = await getDoc(ref);
 				if (snap.exists()) {
 					const data = snap.data() as { history?: StampHistory[] };
-					if (data.history) {
-						setHistory(data.history);
-						setStampedNumbers(data.history.map(h => h.stampNumber));
+					if (data.history && data.history.length > 0) {
+						// Firestoreにデータがある場合、ローカルと比較
+						const localStamps = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
+						const localHistory = JSON.parse(localStorage.getItem("stamp_history_v1") || "[]");
+						
+						// Firestoreの方が新しい場合は同期
+						if (data.history.length > localHistory.length) {
+							setHistory(data.history);
+							setStampedNumbers(data.history.map(h => h.stampNumber));
+							localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
+							localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
+						} else {
+							// ローカルの方が新しい場合、一斉同期
+							await syncOfflineData(localHistory, data.history);
+						}
+					} else {
+						// Firestoreが空の場合は、ローカルもクリア
+						setHistory([]);
+						setStampedNumbers([]);
+						localStorage.removeItem("stamps_v1");
+						localStorage.removeItem("stamp_history_v1");
 					}
+				} else {
+					// Firestoreにドキュメントが存在しない場合、ローカルもクリア
+					setHistory([]);
+					setStampedNumbers([]);
+					localStorage.removeItem("stamps_v1");
+					localStorage.removeItem("stamp_history_v1");
 				}
 			} catch (err) {
 				console.error("Failed to load from Firestore", err);
@@ -204,6 +242,32 @@ export default function StampRallyPage() {
 		}
 		loadFromFirestore();
 	}, [profile?.userId]);
+	
+	// オフラインで獲得したデータを一斉同期
+	async function syncOfflineData(localHistory: StampHistory[], firestoreHistory: StampHistory[]) {
+		if (!profile?.userId) return;
+		
+		try {
+			const ref = doc(db, "stamp_rallies", profile.userId);
+			
+			// ローカルにあってFirestoreにないデータを特定
+			const newEntries = localHistory.filter(local => 
+				!firestoreHistory.some(firestore => 
+					local.stampNumber === firestore.stampNumber &&
+					local.venueName === firestore.venueName &&
+					local.date === firestore.date
+				)
+			);
+			
+			if (newEntries.length > 0) {
+				// 一斉送信
+				await updateDoc(ref, { history: arrayUnion(...newEntries) });
+				console.log(`${newEntries.length}件のオフラインデータを同期しました`);
+			}
+		} catch (err) {
+			console.error("Failed to sync offline data", err);
+		}
+	}
 
 	useEffect(() => {
 		if (!profile) return;
@@ -217,12 +281,20 @@ export default function StampRallyPage() {
 	}, [profile]);
 
 	async function handleQRCode(qrValue: string, prof: any) {
-		const stampNumber = stampQRCodes[qrValue];
-		if (!stampNumber || stampNumber < 1 || stampNumber > totalStamps) {
+		const qrStampNumber = stampQRCodes[qrValue];
+		if (!qrStampNumber || qrStampNumber < 1 || qrStampNumber > totalStamps) {
 			setOutputMessage("無効なQRコードです");
 			return;
 		}
-		const restriction = stampDateRestrictions[stampNumber];
+		
+		// 重複チェック（QRコードの番号ではなく、獲得済みかどうか）
+		// 一時的に無効化: window.disableDuplicateCheck = true でコンソールから制御可能
+		if (!window.disableDuplicateCheck && stampedNumbers.includes(qrStampNumber)) {
+			setOutputMessage(`このQRコードは既に読み込まれています`);
+			return;
+		}
+		
+		const restriction = stampDateRestrictions[qrStampNumber];
 		if (restriction) {
 			const now = new Date();
 			const todayStr = now.toISOString().slice(0, 10);
@@ -248,14 +320,15 @@ export default function StampRallyPage() {
 				setOutputMessage(`会場の近くにいません\n最寄り: ${closestVenue?.name}まで約${Math.round(minDistance)}m`);
 				return;
 			}
-			const nextStamp = stampedNumbers.length + 1;
-			if (nextStamp > totalStamps) {
+			
+			if (stampedNumbers.length >= totalStamps) {
 				setOutputMessage("全て獲得済みです！");
 				return;
 			}
 			const nowStr = new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
-			const newEntry: StampHistory = { stampNumber: nextStamp, venueName: closestVenue.name, date: nowStr, source: `QR / ${prof.displayName || "ゲスト"}` };
-			setStampedNumbers([...stampedNumbers, nextStamp]);
+			const nextStampNumber = stampedNumbers.length + 1;
+			const newEntry: StampHistory = { stampNumber: nextStampNumber, venueName: closestVenue.name, date: nowStr, source: `QR / ${prof.displayName || "ゲスト"}` };
+			setStampedNumbers([...stampedNumbers, nextStampNumber]);
 			setHistory([...history, newEntry]);
 			// Firestoreへ追記
 			try {
@@ -271,11 +344,8 @@ export default function StampRallyPage() {
 			} catch (err) {
 				console.error("Failed to sync Firestore", err);
 			}
-			setOutputMessage(`スタンプ${nextStamp}を獲得！（会場: ${closestVenue.name}）`);
-			if (specialStampNumbers.includes(nextStamp)) {
-				setStaffPrize(`${nextStamp === 22 ? "❓" : "🎁"} ギフト（${nextStamp}個目）`);
-				setShowStaffConfirm(true);
-			}
+			setOutputMessage(`スタンプ${nextStampNumber}を獲得！（会場: ${closestVenue.name}）`);
+
 		} catch (e: any) {
 			setOutputMessage(e.message || "位置情報取得エラー");
 		}
@@ -352,7 +422,7 @@ export default function StampRallyPage() {
 		setOutputMessage(`スタンプ${nextStamp}を追加しました（会場: ${venueNameForAdmin}）`);
 	}
 
-	function handleAdminDelete() {
+	async function handleAdminDelete() {
 		const pw = prompt("パスワードを入力");
 		if (pw !== adminPassword) {
 			alert("パスワードが違います");
@@ -363,9 +433,75 @@ export default function StampRallyPage() {
 			return;
 		}
 		const last = stampedNumbers[stampedNumbers.length - 1];
+		const lastHistory = history[history.length - 1];
+		
 		setStampedNumbers(prev => prev.slice(0, -1));
 		setHistory(prev => prev.slice(0, -1));
+		
+		// Firestoreからも削除
+		try {
+			if (profile?.userId) {
+				const ref = doc(db, "stamp_rallies", profile.userId);
+				const snap = await getDoc(ref);
+				if (snap.exists()) {
+					const data = snap.data() as { history?: StampHistory[] };
+					if (data.history) {
+						// 最後の履歴を除いた新しい履歴を作成
+						const newHistory = data.history.filter(h => 
+							!(h.stampNumber === lastHistory.stampNumber && 
+							  h.venueName === lastHistory.venueName && 
+							  h.date === lastHistory.date)
+						);
+						await updateDoc(ref, { history: newHistory });
+					}
+				}
+			}
+		} catch (err) {
+			console.error("Failed to sync Firestore (delete)", err);
+		}
+		
 		setOutputMessage(`スタンプ${last}を削除しました`);
+	}
+
+	async function handleAdminReset() {
+		const pw = prompt("パスワードを入力");
+		if (pw !== adminPassword) {
+			alert("パスワードが違います");
+			return;
+		}
+		if (!confirm("本当に全てのスタンプをリセットしますか？")) {
+			return;
+		}
+		setStampedNumbers([]);
+		setHistory([]);
+		setClaimedPrizeNumbers([]);
+		localStorage.removeItem("stamps_v1");
+		localStorage.removeItem("stamp_history_v1");
+		localStorage.removeItem("claimed_prizes_v1");
+		// Firestoreからも削除
+		try {
+			if (profile?.userId) {
+				const ref = doc(db, "stamp_rallies", profile.userId);
+				await updateDoc(ref, { history: [] });
+			}
+		} catch (err) {
+			console.error("Failed to reset Firestore", err);
+		}
+		
+		setOutputMessage("全てのスタンプをリセットしました");
+	}
+
+	async function handleAdminResetDuplicateCheck() {
+		const pw = prompt("パスワードを入力");
+		if (pw !== adminPassword) {
+			alert("パスワードが違います");
+			return;
+		}
+		// 重複チェック用のフラグをリセット
+		if (typeof window !== 'undefined') {
+			(window as any).duplicateCheckReset = Date.now();
+		}
+		setOutputMessage("重複チェックをリセットしました。同じQRコードを再度読み取れます。");
 	}
 
 	const nextPrizeNumber = specialStampNumbers.find(num => stampedNumbers.length < num);
@@ -496,16 +632,16 @@ export default function StampRallyPage() {
 								key={num}
 								type="button"
 								onClick={() => {
-									if (!achieved) return;
+									if (!achieved || claimed) return;
 									setCurrentPrizeNumber(num);
 									setStaffPrize(`${num === 22 ? "❓" : "🎁"} ギフト（${num}個目）`);
 									setShowStaffConfirm(true);
 								}}
 								className={`prize-progress ${achieved ? "prize-done" : ""}`}
-								style={{ cursor: achieved ? "pointer" : "default" }}
+								style={{ cursor: achieved && !claimed ? "pointer" : "default" }}
 							>
 								<span className="prize-num">{num}</span>
-								<span className="prize-label">{achieved ? (claimed ? "✅ 受け取り済" : "🎁 受け取る") : "🎁GET!"}</span>
+								<span className="prize-label">{achieved ? (claimed ? "達成✅" : "🎁 受け取る") : "🎁GET!"}</span>
 							</button>
 						);
 					})}
@@ -513,33 +649,30 @@ export default function StampRallyPage() {
 			</div>
 			{/* ここからスタンプグリッド */}
 			<div className="stamp-container"> 
-				{Array.from({ length: totalStamps }, (_, i) => i + 1).map(num => (
-					<div key={num} className={`stamp ${stampedNumbers.includes(num) ? "stamped" : ""} ${specialStampNumbers.includes(num) ? "special-stamp" : ""}`}>
-						{num === 3 || num === 7 || num === 12 ? (
-							<>
-								{num}
-								<span className="special-label">🎁
-									<br />
-									ギフト
-								</span>
-							</>
-						) : num === 22 ? (
-							<>
-								{num}
-								<span className="special-label">❓
-									<br />
-									ギフト
-								</span>
-							</>
-						) : (
-							num
-						)}
-					</div>
-				))}
+				{Array.from({ length: totalStamps }, (_, i) => i + 1).map(num => {
+					const isStamped = stampedNumbers.includes(num);
+					const isSpecial = specialStampSet.has(num);
+					return (
+						<div key={num} className={`stamp ${isStamped ? "stamped" : ""} ${isSpecial ? "special-stamp" : ""}`}>
+							{isSpecial ? (
+								<>
+									{num}
+									<span className="special-label">
+										{num === 22 ? "❓" : "🎁"}
+										<br />
+										ギフト
+									</span>
+								</>
+							) : (
+								num
+							)}
+						</div>
+					);
+				})}
 				{/* 日程表ボタン - スタンプ22の右側 */}
 				<button 
 					className="schedule-btn-in-grid" 
-					onClick={() => setScheduleOpen(!scheduleOpen)}
+					onClick={() => window.open('https://www.kcbbf.jp/index/show-pdf/url/aHR0cHM6Ly9kMmEwdjF4N3F2eGw2Yy5jbG91ZGZyb250Lm5ldC9maWxlcy9zcG9ocF9rY2JiZi9nYW1lX2NhdGVnb3J5LzY4OTMxYzEzMjk5ZmQucGRm', '_blank')}
 				>
 					📅
 					<br />
@@ -565,15 +698,20 @@ export default function StampRallyPage() {
 				</div>
 			)}
 			{showStaffConfirm && (
-				<div className="staff-confirm-container" onClick={()=>setShowStaffConfirm(false)} onTouchStart={(e)=>{touchStartXRef.current=e.touches[0].clientX;hasSwipedRef.current=false;}} onTouchMove={(e)=>{if(touchStartXRef.current==null)return;const dx=e.touches[0].clientX-touchStartXRef.current;if(Math.abs(dx)>80){hasSwipedRef.current=true;}}} onTouchEnd={()=>{if(hasSwipedRef.current){setShowStaffConfirm(false);if(currentPrizeNumber!=null){setClaimedPrizeNumbers(prev=> prev.includes(currentPrizeNumber!)?prev:[...prev,currentPrizeNumber!]);}setOutputMessage("スタッフ確認済みにしました");}touchStartXRef.current=null;hasSwipedRef.current=false;}}>
+				<div className="staff-confirm-container" onClick={()=>setShowStaffConfirm(false)}>
 					<div className="confirm-label">
 						<span>🎉 おめでとうございます！</span>
 						<br />
 						<span>{staffPrize} を獲得しました。</span>
 						<br />
-						<span style={{ color: "#c30000" }}>会場スタッフにこの画面をお見せください。</span>
+						<span>会場スタッフにこの画面をお見せください。</span>
 					</div>
-					<button onClick={() => setShowStaffConfirm(false)}>タップで閉じる</button>
+					<button onClick={() => {
+						setShowStaffConfirm(false);
+						if(currentPrizeNumber!=null){
+							setClaimedPrizeNumbers(prev=> prev.includes(currentPrizeNumber!)?prev:[...prev,currentPrizeNumber!]);
+						}
+					}} style={{ background: "#6c757d", color: "#fff" }}>タップで閉じる</button>
 				</div>
 			)}
 			<div className="history-list">
@@ -610,6 +748,12 @@ export default function StampRallyPage() {
 						<button className="button admin-btn" onClick={handleAdminDelete}>
 							スタンプ削除
 						</button>
+						<button className="button admin-btn" onClick={handleAdminReset} style={{ background: "#dc3545" }}>
+							全リセット
+						</button>
+						<button className="button admin-btn" onClick={handleAdminResetDuplicateCheck} style={{ background: "#fd7e14" }}>
+							重複チェックリセット
+						</button>
 					</div>
 				)}
 			</div>
@@ -625,10 +769,10 @@ export default function StampRallyPage() {
 				.stamp-count, .next-prize-info { margin: 4px 0; }
 				.count-large { font-size: 1.4em; font-weight: bold; color: #a97b2c; }
 				.prize-progress-bar { display: flex; justify-content: center; gap: 12px; margin: 16px 0; padding: 0 10px; max-width: 400px; margin-left: auto; margin-right: auto; }
-				.prize-progress { flex: 1; background: #f8f9fa; border: 2px solid #e9ecef; border-radius: 9px; padding: 8px 10px; color: #adb5bd; font-weight: bold; font-size: 1em; text-align: center; box-shadow: 0 1px 4px #0001; transition: all 0.3s ease; }
+				.prize-progress { flex: 1; background: #f8f9fa; border: 2px solid #e9ecef; border-radius: 9px; padding: 8px 6px; color: #adb5bd; font-weight: bold; font-size: 1em; text-align: center; box-shadow: 0 1px 4px #0001; transition: all 0.3s ease; min-height: 60px; }
 				.prize-done { background: #fffbe7; border-color: #ffd700; color: #b88c00; transform: scale(1.05); box-shadow: 0 2px 10px #ffd70044; }
 				.prize-num { font-size: 1.2em; font-weight: bold; display: block; }
-				.prize-label { font-size: 0.8em; display: block; margin-top: 2px; }
+				.prize-label { font-size: 0.55em; display: block; margin-top: 2px; line-height: 0.85; }
 				/* デフォルトは 6 列、スマホでは 5-5-5-2 に見える幅へ */
 				.stamp-container { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; max-width: 380px; margin: 0 auto 30px; padding: 0 10px; }
 				@media (max-width: 420px) {
@@ -652,8 +796,9 @@ export default function StampRallyPage() {
 				.admin-toggle-btn { background-color: #f8f9fa; color: #6c757d; border: 1px solid #dee2e6; padding: 8px 16px; font-size: 14px; }
 				.admin-controls { margin: 0 auto; padding: 15px; background: #f1f3f5; border-radius: 8px; border: 1px solid #dee2e6; max-width: 300px; text-align: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 				.admin-btn { background-color: #6c757d; color: white; padding: 8px 16px; font-size: 14px; border-radius: 5px; }
-				.staff-confirm-container { margin: 24px auto 0 auto; max-width: 420px; background: #fffbe7; border: 2px solid #ffd700cc; border-radius: 12px; box-shadow: 0 4px 16px #ffd70022; padding: 28px 20px 22px 20px; color: #a97c2c; font-size: 1.22em; font-weight: bold; text-align: center; z-index: 12; }
-				.staff-confirm-container .confirm-label { margin-bottom: 14px; font-size: 1.1em; font-weight: bold; color: #b88c00; letter-spacing: 1px; text-shadow: 0 2px 12px #fffbe7; line-height: 1.6; }
+				.staff-confirm-container { margin: 24px auto 0 auto; max-width: 480px; background: #fffbe7; border: 2px solid #ffd700cc; border-radius: 12px; box-shadow: 0 4px 16px #ffd70022; padding: 28px 20px 22px 20px; color: #a97c2c; font-size: 1.22em; font-weight: bold; text-align: center; z-index: 12; }
+				.staff-confirm-container .confirm-label { margin-bottom: 14px; font-size: 0.85em; font-weight: bold; color: #b88c00; letter-spacing: 1px; text-shadow: 0 2px 12px #fffbe7; line-height: 1.6; }
+				.staff-confirm-container .confirm-label span { white-space: nowrap; }
 				.staff-confirm-container button { margin-top: 10px; background: #00c300; color: #fff; font-size: 1.1em; border-radius: 8px; border: none; padding: 10px 28px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 12px #c3e6cb88; }
 				/* 日程表 */
 				.schedule-section { margin: 20px 0; padding: 16px; background: #fffbe7; border-radius: 10px; border: 1px solid #ffd70044; }
