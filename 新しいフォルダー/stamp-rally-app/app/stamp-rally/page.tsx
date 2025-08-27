@@ -26,7 +26,7 @@ const venues = [
 ];
 const maxDistance = 1000;
 
-const specialStampNumbers = [3, 7, 12, 22, 23];
+const specialStampNumbers = [3, 7, 12, 22];
 const adminPassword = "3557";
 
 const stampDateRestrictions: { [key: number]: { end: string } } = {
@@ -125,54 +125,36 @@ export default function StampRallyPage() {
 	useEffect(() => {
 		if (!liffReady) return;
 		async function initLiff() {
-			console.log("LIFF初期化開始");
 			if (!window.liff) {
-				console.error("LIFF SDK not found");
 				setLiffError("LIFF SDKが読み込まれていません。LINEアプリで開いてください。");
 				setLiffLoading(false);
 				return;
 			}
 			try {
-				console.log("LIFF init開始, liffId:", liffId);
 				await window.liff.init({ liffId });
-				console.log("LIFF init完了");
-				
-				const isLoggedIn = window.liff.isLoggedIn();
-				console.log("ログイン状態:", isLoggedIn);
-				
-				if (!isLoggedIn) {
-					console.log("ログインしていないため、ログイン処理を開始");
+				if (!window.liff.isLoggedIn()) {
 					// 常にLIFFに登録したエンドポイント配下に戻す
 					const params = new URLSearchParams(window.location.search);
 					const stamp = params.get("stamp");
 					const basePath = "/stamp-rally";
 					const redirectUri = window.location.origin + basePath + (stamp ? `?stamp=${encodeURIComponent(stamp)}` : "");
-					console.log("リダイレクトURI:", redirectUri);
-					
 					// ログイン再帰ループ抑止（短時間での多重遷移を抑える）
 					try {
 						const last = sessionStorage.getItem("liffLoginTriedAt");
 						if (last && Date.now() - parseInt(last) < 15000) {
-							console.log("ログイン再帰ループ検出");
 							setLiffError("LINEログインに戻りました。LINEアプリ内で開いているか、LIFFのURL設定をご確認ください。");
 							setLiffLoading(false);
 							return;
 						}
 						sessionStorage.setItem("liffLoginTriedAt", String(Date.now()));
 					} catch {}
-					
-					console.log("LIFF login実行");
 					window.liff.login({ redirectUri });
 					return;
 				}
-				
-				console.log("プロフィール取得開始");
 				const prof = await window.liff.getProfile();
-				console.log("プロフィール取得成功:", prof);
 				setProfile(prof);
 				setLiffLoading(false);
 			} catch (e: any) {
-				console.error("LIFF初期化エラー:", e);
 				setLiffError("LINEログイン必須です。再読込してください。");
 				setLiffLoading(false);
 				console.error(e);
@@ -552,14 +534,12 @@ export default function StampRallyPage() {
 			<div style={{ textAlign: "center", marginTop: "40px" }}>
 				<Image src="/autumn_logo.png" alt="logo" width={100} height={100} />
 				<h2>LINE認証中...</h2>
+				<Script src="https://static.line-scdn.net/liff/edge/2/sdk.js" strategy="afterInteractive" onLoad={() => setLiffReady(true)} />
 				<div style={{ marginTop: 12 }}>
 					<button onClick={retryLogin} style={{ padding: "8px 14px", borderRadius: 6, background: "#00c300", color: "#fff", fontWeight: 700 }}>ログインを再試行</button>
 				</div>
 				<div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
 					URL: {typeof window !== "undefined" ? window.location.href : ""}
-				</div>
-				<div style={{ marginTop: 10, fontSize: 10, color: "#999" }}>
-					デバッグ: liffReady={liffReady ? "true" : "false"}, liffLoading={liffLoading ? "true" : "false"}, profile={profile ? "あり" : "なし"}
 				</div>
 			</div>
 		);
@@ -689,7 +669,7 @@ export default function StampRallyPage() {
 						</div>
 					);
 				})}
-				{/* 日程表ボタン - スタンプ22の右側 */}
+				{/* 日程表ボタン - スタンプ23の右側 */}
 				<button 
 					className="schedule-btn-in-grid" 
 					onClick={() => window.open('https://www.kcbbf.jp/index/show-pdf/url/aHR0cHM6Ly9kMmEwdjF4N3F2eGw2Yy5jbG91ZGZyb250Lm5ldC9maWxlcy9zcG9ocF9rY2JiZi9nYW1lX2NhdGVnb3J5LzY4OTMxYzEzMjk5ZmQucGRm', '_blank')}
