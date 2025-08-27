@@ -122,69 +122,31 @@ export default function StampRallyPage() {
 	// 特別スタンプの判定を最適化
 	const specialStampSet = useMemo(() => new Set(specialStampNumbers), []);
 
+	// シンプルなLIFF初期化
 	useEffect(() => {
 		if (!liffReady) return;
+		
 		async function initLiff() {
-			if (!window.liff) {
-				setLiffError("LIFF SDKが読み込まれていません。LINEアプリで開いてください。");
-				setLiffLoading(false);
-				return;
-			}
 			try {
 				await window.liff.init({ liffId });
+				
 				if (!window.liff.isLoggedIn()) {
-					// 常にLIFFに登録したエンドポイント配下に戻す
-					const params = new URLSearchParams(window.location.search);
-					const stamp = params.get("stamp");
-					const basePath = "/stamp-rally";
-					const redirectUri = window.location.origin + basePath + (stamp ? `?stamp=${encodeURIComponent(stamp)}` : "");
-					// ログイン再帰ループ抑止（短時間での多重遷移を抑える）
-					try {
-						const last = sessionStorage.getItem("liffLoginTriedAt");
-						if (last && Date.now() - parseInt(last) < 15000) {
-							setLiffError("LINEログインに戻りました。LINEアプリ内で開いているか、LIFFのURL設定をご確認ください。");
-							setLiffLoading(false);
-							return;
-						}
-						sessionStorage.setItem("liffLoginTriedAt", String(Date.now()));
-					} catch {}
-					window.liff.login({ redirectUri });
+					window.liff.login();
 					return;
 				}
+				
 				const prof = await window.liff.getProfile();
 				setProfile(prof);
 				setLiffLoading(false);
 			} catch (e: any) {
-				setLiffError("LINEログイン必須です。再読込してください。");
+				console.error("LIFF初期化エラー:", e);
+				setLiffError("LINEログインに失敗しました。アプリを再読み込みしてください。");
 				setLiffLoading(false);
-				console.error(e);
 			}
 		}
+		
 		initLiff();
 	}, [liffReady]);
-
-	// 初期化が長引く場合のフォールバック表示
-	useEffect(() => {
-		const timer = setTimeout(() => {
-			if (liffLoading && !profile && !liffError) {
-				setLiffError("LIFFの初期化が長引いています。LINEアプリ内で開いているか、LIFFのEndpoint URLと実際のURLが一致しているか確認してください。");
-			}
-		}, 15000);
-		return () => clearTimeout(timer);
-	}, [liffLoading, profile, liffError]);
-
-	function retryLogin() {
-		try {
-			if (typeof window === "undefined" || !window.liff) return;
-			const params = new URLSearchParams(window.location.search);
-			const stamp = params.get("stamp");
-			const basePath = "/stamp-rally";
-			const redirectUri = window.location.origin + basePath + (stamp ? `?stamp=${encodeURIComponent(stamp)}` : "");
-			window.liff.login({ redirectUri });
-		} catch (e) {
-			console.error(e);
-		}
-	}
 
 	useEffect(() => {
 		const stamped = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
@@ -535,12 +497,6 @@ export default function StampRallyPage() {
 				<Image src="/autumn_logo.png" alt="logo" width={100} height={100} />
 				<h2>LINE認証中...</h2>
 				<Script src="https://static.line-scdn.net/liff/edge/2/sdk.js" strategy="afterInteractive" onLoad={() => setLiffReady(true)} />
-				<div style={{ marginTop: 12 }}>
-					<button onClick={retryLogin} style={{ padding: "8px 14px", borderRadius: 6, background: "#00c300", color: "#fff", fontWeight: 700 }}>ログインを再試行</button>
-				</div>
-				<div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
-					URL: {typeof window !== "undefined" ? window.location.href : ""}
-				</div>
 			</div>
 		);
 	}

@@ -27,3 +27,4 @@ npm run build && npm start
 - LIFF ID is configured in `app/stamp-rally/page.tsx`
 - The root route redirects to `/stamp-rally`
 
+
