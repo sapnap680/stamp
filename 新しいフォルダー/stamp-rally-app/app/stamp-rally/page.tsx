@@ -122,7 +122,7 @@ export default function StampRallyPage() {
 	// 特別スタンプの判定を最適化
 	const specialStampSet = useMemo(() => new Set(specialStampNumbers), []);
 
-	// シンプルなLIFF初期化
+	// 元の動作していたLIFF初期化
 	useEffect(() => {
 		if (!liffReady) return;
 		
@@ -488,7 +488,26 @@ export default function StampRallyPage() {
 
 	if (liffError) {
 		return (
-			<div style={{ color: "red", fontWeight: "bold", textAlign: "center", marginTop: "40px" }}>{liffError}</div>
+			<div style={{ textAlign: "center", marginTop: "40px", padding: "20px" }}>
+				<Image src="/autumn_logo.png" alt="logo" width={100} height={100} />
+				<div style={{ color: "red", fontWeight: "bold", marginTop: "20px" }}>{liffError}</div>
+				<div style={{ marginTop: "15px", fontSize: "14px", color: "#666" }}>
+					<button 
+						onClick={() => window.location.reload()} 
+						style={{ 
+							padding: "10px 20px", 
+							borderRadius: "6px", 
+							background: "#00c300", 
+							color: "#fff", 
+							border: "none",
+							fontWeight: "bold",
+							cursor: "pointer"
+						}}
+					>
+						再読み込み
+					</button>
+				</div>
+			</div>
 		);
 	}
 	if (liffLoading || !profile) {
