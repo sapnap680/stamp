@@ -122,46 +122,30 @@ export default function StampRallyPage() {
 	// 特別スタンプの判定を最適化
 	const specialStampSet = useMemo(() => new Set(specialStampNumbers), []);
 
-	// 確実なLIFF初期化
+	// 最もシンプルなLIFF初期化
 	useEffect(() => {
 		if (!liffReady) return;
 		
 		async function initLiff() {
 			try {
-				// LIFF SDKの読み込み確認
-				if (typeof window === 'undefined' || !window.liff) {
-					setLiffError("LIFF SDKが読み込まれていません。");
-					setLiffLoading(false);
-					return;
-				}
-				
-				// LIFF初期化
 				await window.liff.init({ liffId });
 				
-				// ログイン状態確認
 				if (!window.liff.isLoggedIn()) {
-					// シンプルなログイン（リダイレクトURIは自動設定）
 					window.liff.login();
 					return;
 				}
 				
-				// プロフィール取得
 				const prof = await window.liff.getProfile();
 				setProfile(prof);
 				setLiffLoading(false);
 			} catch (e: any) {
 				console.error("LIFF初期化エラー:", e);
-				setLiffError("LINEログインに失敗しました。LINEアプリ内で開いているか確認してください。");
+				setLiffError("LINEログインに失敗しました。LINEアプリ内で開いてください。");
 				setLiffLoading(false);
 			}
 		}
 		
-		// 少し遅延させてから初期化
-		const timer = setTimeout(() => {
-			initLiff();
-		}, 100);
-		
-		return () => clearTimeout(timer);
+		initLiff();
 	}, [liffReady]);
 
 	useEffect(() => {
@@ -176,50 +160,50 @@ export default function StampRallyPage() {
 		localStorage.setItem("stamp_history_v1", JSON.stringify(history));
 	}, [stampedNumbers, history]);
 
-	// Firestoreから履歴読み込み（ログイン後）
-	useEffect(() => {
-		async function loadFromFirestore() {
-			if (!profile?.userId) return;
-			try {
-				const ref = doc(db, "stamp_rallies", profile.userId);
-				const snap = await getDoc(ref);
-				if (snap.exists()) {
-					const data = snap.data() as { history?: StampHistory[] };
-					if (data.history && data.history.length > 0) {
-						// Firestoreにデータがある場合、ローカルと比較
-						const localStamps = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
-						const localHistory = JSON.parse(localStorage.getItem("stamp_history_v1") || "[]");
-						
-						// Firestoreの方が新しい場合は同期
-						if (data.history.length > localHistory.length) {
-							setHistory(data.history);
-							setStampedNumbers(data.history.map(h => h.stampNumber));
-							localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
-							localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
-						} else {
-							// ローカルの方が新しい場合、一斉同期
-							await syncOfflineData(localHistory, data.history);
-						}
-					} else {
-						// Firestoreが空の場合は、ローカルもクリア
-						setHistory([]);
-						setStampedNumbers([]);
-						localStorage.removeItem("stamps_v1");
-						localStorage.removeItem("stamp_history_v1");
-					}
-				} else {
-					// Firestoreにドキュメントが存在しない場合、ローカルもクリア
-					setHistory([]);
-					setStampedNumbers([]);
-					localStorage.removeItem("stamps_v1");
-					localStorage.removeItem("stamp_history_v1");
-				}
-			} catch (err) {
-				console.error("Failed to load from Firestore", err);
-			}
-		}
-		loadFromFirestore();
-	}, [profile?.userId]);
+	// Firestore同期を一時的に無効化（LINEログイン問題解決のため）
+	// useEffect(() => {
+	// 	async function loadFromFirestore() {
+	// 		if (!profile?.userId) return;
+	// 		try {
+	// 			const ref = doc(db, "stamp_rallies", profile.userId);
+	// 			const snap = await getDoc(ref);
+	// 			if (snap.exists()) {
+	// 				const data = snap.data() as { history?: StampHistory[] };
+	// 				if (data.history && data.history.length > 0) {
+	// 					// Firestoreにデータがある場合、ローカルと比較
+	// 					const localStamps = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
+	// 					const localHistory = JSON.parse(localStorage.getItem("stamp_history_v1") || "[]");
+	// 					
+	// 					// Firestoreの方が新しい場合は同期
+	// 					if (data.history.length > localHistory.length) {
+	// 						setHistory(data.history);
+	// 						setStampedNumbers(data.history.map(h => h.stampNumber));
+	// 						localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
+	// 						localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
+	// 					} else {
+	// 						// ローカルの方が新しい場合、一斉同期
+	// 						await syncOfflineData(localHistory, data.history);
+	// 					}
+	// 				} else {
+	// 					// Firestoreが空の場合は、ローカルもクリア
+	// 					setHistory([]);
+	// 					setStampedNumbers([]);
+	// 					localStorage.removeItem("stamps_v1");
+	// 					localStorage.removeItem("stamp_history_v1");
+	// 				}
+	// 			} else {
+	// 				// Firestoreにドキュメントが存在しない場合、ローカルもクリア
+	// 				setHistory([]);
+	// 				setStampedNumbers([]);
+	// 				localStorage.removeItem("stamps_v1");
+	// 				localStorage.removeItem("stamp_history_v1");
+	// 			}
+	// 		} catch (err) {
+	// 			console.error("Failed to load from Firestore", err);
+	// 		}
+	// 	}
+	// 	loadFromFirestore();
+	// }, [profile?.userId]);
 	
 	// オフラインで獲得したデータを一斉同期
 	async function syncOfflineData(localHistory: StampHistory[], firestoreHistory: StampHistory[]) {
@@ -509,7 +493,11 @@ export default function StampRallyPage() {
 				<div style={{ color: "red", fontWeight: "bold", marginTop: "20px" }}>{liffError}</div>
 				<div style={{ marginTop: "15px", fontSize: "14px", color: "#666" }}>
 					<button 
-						onClick={() => window.location.reload()} 
+						onClick={() => {
+							setLiffError("");
+							setLiffLoading(true);
+							window.location.reload();
+						}} 
 						style={{ 
 							padding: "10px 20px", 
 							borderRadius: "6px", 
