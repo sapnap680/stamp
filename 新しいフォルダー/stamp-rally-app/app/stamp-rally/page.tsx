@@ -135,7 +135,7 @@ export default function StampRallyPage() {
 				setProfile(prof);
 				setLiffLoading(false);
 			} catch (e: any) {
-				setLiffError("LINEログインに失敗しました。アプリを再読み込みしてください。");
+				setLiffError("LINEログインに失敗しました。LINEアプリ内で開いてください。");
 				setLiffLoading(false);
 			}
 		}
