@@ -27,10 +27,11 @@ const venues = [
 const maxDistance = 1000;
 
 const specialStampNumbers = [3, 7, 12, 22];
+const giftNumbers = [1, 2, 3, 4]; // ギフト1個目、2個目、3個目、4個目
 const adminPassword = "3557";
 
 const stampDateRestrictions: { [key: number]: { end: string } } = {
-	1: { end: "2025-08-27" },
+	1: { end: "2025-08-30" },
 	2: { end: "2025-08-30" },
 	3: { end: "2025-08-31" },
 	4: { end: "2025-09-03" },
@@ -64,6 +65,27 @@ const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => 
 	const a = Math.sin(dphi / 2) ** 2 + Math.cos(phi1) * Math.cos(phi2) * Math.sin(dl / 2) ** 2;
 	const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
 	return R * c;
+};
+
+// 紙吹雪演出関数
+const showConfetti = () => {
+	const confettiDiv = document.createElement('div');
+	confettiDiv.className = 'confetti';
+	for (let i = 0; i < 30; i++) {
+		let piece = document.createElement('div');
+		piece.className = 'confetti-piece';
+		piece.style.left = Math.random() * 100 + "vw";
+		piece.style.animationDelay = (Math.random() * 0.8) + "s";
+		piece.style.background = [
+			'linear-gradient(135deg,#ffd700 70%,#fff 100%)',
+			'linear-gradient(135deg,#ff0055 60%,#fff 100%)',
+			'linear-gradient(135deg,#00c300 70%,#fff 90%)',
+			'linear-gradient(135deg,#a97b2c 85%,#fff 100%)'
+		][Math.floor(Math.random()*4)];
+		confettiDiv.appendChild(piece);
+	}
+	document.body.appendChild(confettiDiv);
+	setTimeout(() => { confettiDiv.remove(); }, 6000);
 };
 
 declare global {
@@ -108,6 +130,9 @@ export default function StampRallyPage() {
 	// 受取済み景品のトラッキング
 	const [claimedPrizeNumbers, setClaimedPrizeNumbers] = useState<number[]>([]);
 	
+	// 特別スタンプ演出用
+	const [specialStampEffect, setSpecialStampEffect] = useState<number | null>(null);
+	
 	// 受取済み状態をlocalStorageから読み込み
 	useEffect(() => {
 		const claimed = JSON.parse(localStorage.getItem("claimed_prizes_v1") || "[]");
@@ -125,22 +150,66 @@ export default function StampRallyPage() {
 	useEffect(() => {
 		if (!liffReady) return;
 		async function initLiff() {
+			if (!window.liff) {
+				setLiffError("LIFF SDKが読み込まれていません。LINEアプリで開いてください。");
+				setLiffLoading(false);
+				return;
+			}
 			try {
 				await window.liff.init({ liffId });
 				if (!window.liff.isLoggedIn()) {
-					window.liff.login();
+					// 常にLIFFに登録したエンドポイント配下に戻す
+					const params = new URLSearchParams(window.location.search);
+					const stamp = params.get("stamp");
+					const basePath = "/stamp-rally";
+					const redirectUri = window.location.origin + basePath + (stamp ? `?stamp=${encodeURIComponent(stamp)}` : "");
+					// ログイン再帰ループ抑止（短時間での多重遷移を抑える）
+					try {
+						const last = sessionStorage.getItem("liffLoginTriedAt");
+						if (last && Date.now() - parseInt(last) < 15000) {
+							setLiffError("LINEログインに戻りました。LINEアプリ内で開いているか、LIFFのURL設定をご確認ください。");
+							setLiffLoading(false);
+							return;
+						}
+						sessionStorage.setItem("liffLoginTriedAt", String(Date.now()));
+					} catch {}
+					window.liff.login({ redirectUri });
 					return;
 				}
 				const prof = await window.liff.getProfile();
 				setProfile(prof);
 				setLiffLoading(false);
 			} catch (e: any) {
-				setLiffError("LINEログインに失敗しました。LINEアプリ内で開いてください。");
+				setLiffError("LINEログイン必須です。再読込してください。");
 				setLiffLoading(false);
+				console.error(e);
 			}
 		}
 		initLiff();
 	}, [liffReady]);
+
+	// 初期化が長引く場合のフォールバック表示
+	useEffect(() => {
+		const timer = setTimeout(() => {
+			if (liffLoading && !profile && !liffError) {
+				setLiffError("LIFFの初期化が長引いています。LINEアプリ内で開いているか、LIFFのEndpoint URLと実際のURLが一致しているか確認してください。");
+			}
+		}, 15000);
+		return () => clearTimeout(timer);
+	}, [liffLoading, profile, liffError]);
+
+	function retryLogin() {
+		try {
+			if (typeof window === "undefined" || !window.liff) return;
+			const params = new URLSearchParams(window.location.search);
+			const stamp = params.get("stamp");
+			const basePath = "/stamp-rally";
+			const redirectUri = window.location.origin + basePath + (stamp ? `?stamp=${encodeURIComponent(stamp)}` : "");
+			window.liff.login({ redirectUri });
+		} catch (e) {
+			console.error(e);
+		}
+	}
 
 	useEffect(() => {
 		const stamped = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
@@ -154,50 +223,50 @@ export default function StampRallyPage() {
 		localStorage.setItem("stamp_history_v1", JSON.stringify(history));
 	}, [stampedNumbers, history]);
 
-	// Firestore同期を一時的に無効化（LINEログイン問題解決のため）
-	// useEffect(() => {
-	// 	async function loadFromFirestore() {
-	// 		if (!profile?.userId) return;
-	// 		try {
-	// 			const ref = doc(db, "stamp_rallies", profile.userId);
-	// 			const snap = await getDoc(ref);
-	// 			if (snap.exists()) {
-	// 				const data = snap.data() as { history?: StampHistory[] };
-	// 				if (data.history && data.history.length > 0) {
-	// 					// Firestoreにデータがある場合、ローカルと比較
-	// 					const localStamps = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
-	// 					const localHistory = JSON.parse(localStorage.getItem("stamp_history_v1") || "[]");
-	// 					
-	// 					// Firestoreの方が新しい場合は同期
-	// 					if (data.history.length > localHistory.length) {
-	// 						setHistory(data.history);
-	// 						setStampedNumbers(data.history.map(h => h.stampNumber));
-	// 						localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
-	// 						localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
-	// 					} else {
-	// 						// ローカルの方が新しい場合、一斉同期
-	// 						await syncOfflineData(localHistory, data.history);
-	// 					}
-	// 				} else {
-	// 					// Firestoreが空の場合は、ローカルもクリア
-	// 					setHistory([]);
-	// 					setStampedNumbers([]);
-	// 					localStorage.removeItem("stamps_v1");
-	// 					localStorage.removeItem("stamp_history_v1");
-	// 				}
-	// 			} else {
-	// 				// Firestoreにドキュメントが存在しない場合、ローカルもクリア
-	// 				setHistory([]);
-	// 				setStampedNumbers([]);
-	// 				localStorage.removeItem("stamps_v1");
-	// 				localStorage.removeItem("stamp_history_v1");
-	// 			}
-	// 		} catch (err) {
-	// 			console.error("Failed to load from Firestore", err);
-	// 		}
-	// 	}
-	// 	loadFromFirestore();
-	// }, [profile?.userId]);
+	// Firestoreから履歴読み込み（ログイン後）
+	useEffect(() => {
+		async function loadFromFirestore() {
+			if (!profile?.userId) return;
+			try {
+				const ref = doc(db, "stamp_rallies", profile.userId);
+				const snap = await getDoc(ref);
+				if (snap.exists()) {
+					const data = snap.data() as { history?: StampHistory[] };
+					if (data.history && data.history.length > 0) {
+						// Firestoreにデータがある場合、ローカルと比較
+						const localStamps = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
+						const localHistory = JSON.parse(localStorage.getItem("stamp_history_v1") || "[]");
+						
+						// Firestoreの方が新しい場合は同期
+						if (data.history.length > localHistory.length) {
+							setHistory(data.history);
+							setStampedNumbers(data.history.map(h => h.stampNumber));
+							localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
+							localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
+						} else {
+							// ローカルの方が新しい場合、一斉同期
+							await syncOfflineData(localHistory, data.history);
+						}
+					} else {
+						// Firestoreが空の場合は、ローカルもクリア
+						setHistory([]);
+						setStampedNumbers([]);
+						localStorage.removeItem("stamps_v1");
+						localStorage.removeItem("stamp_history_v1");
+					}
+				} else {
+					// Firestoreにドキュメントが存在しない場合、ローカルもクリア
+					setHistory([]);
+					setStampedNumbers([]);
+					localStorage.removeItem("stamps_v1");
+					localStorage.removeItem("stamp_history_v1");
+				}
+			} catch (err) {
+				console.error("Failed to load from Firestore", err);
+			}
+		}
+		loadFromFirestore();
+	}, [profile?.userId]);
 	
 	// オフラインで獲得したデータを一斉同期
 	async function syncOfflineData(localHistory: StampHistory[], firestoreHistory: StampHistory[]) {
@@ -243,10 +312,9 @@ export default function StampRallyPage() {
 			return;
 		}
 		
-		// 重複チェック（QRコードの番号ではなく、獲得済みかどうか）
-		// 一時的に無効化: window.disableDuplicateCheck = true でコンソールから制御可能
-		if (!window.disableDuplicateCheck && stampedNumbers.includes(qrStampNumber)) {
-			setOutputMessage(`このQRコードは既に読み込まれています`);
+		// 重複チェック（同じQRコードを再度読み取った場合のみ）
+		if (stampedNumbers.includes(qrStampNumber)) {
+			setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
 			return;
 		}
 		
@@ -277,15 +345,22 @@ export default function StampRallyPage() {
 				return;
 			}
 			
-			if (stampedNumbers.length >= totalStamps) {
+			if (stampedNumbers.length >= 22) {
 				setOutputMessage("全て獲得済みです！");
 				return;
 			}
+			
 			const nowStr = new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 			const nextStampNumber = stampedNumbers.length + 1;
 			const newEntry: StampHistory = { stampNumber: nextStampNumber, venueName: closestVenue.name, date: nowStr, source: `QR / ${prof.displayName || "ゲスト"}` };
 			setStampedNumbers([...stampedNumbers, nextStampNumber]);
 			setHistory([...history, newEntry]);
+			
+			// 特別スタンプの演出
+			if (specialStampNumbers.includes(nextStampNumber)) {
+				showConfetti();
+			}
+
 			// Firestoreへ追記
 			try {
 				if (profile?.userId) {
@@ -300,7 +375,7 @@ export default function StampRallyPage() {
 			} catch (err) {
 				console.error("Failed to sync Firestore", err);
 			}
-			setOutputMessage(`スタンプ${nextStampNumber}を獲得！（会場: ${closestVenue.name}）`);
+			setOutputMessage(`スタンプ${nextStampNumber}を獲得！\n（会場: ${closestVenue.name}）`);
 
 		} catch (e: any) {
 			setOutputMessage(e.message || "位置情報取得エラー");
@@ -332,7 +407,7 @@ export default function StampRallyPage() {
 			alert("パスワードが違います");
 			return;
 		}
-		if (stampedNumbers.length >= totalStamps) {
+		if (stampedNumbers.length >= 22) {
 			alert("全てのスタンプ獲得済みです");
 			return;
 		}
@@ -491,6 +566,12 @@ export default function StampRallyPage() {
 				<Image src="/autumn_logo.png" alt="logo" width={100} height={100} />
 				<h2>LINE認証中...</h2>
 				<Script src="https://static.line-scdn.net/liff/edge/2/sdk.js" strategy="afterInteractive" onLoad={() => setLiffReady(true)} />
+				<div style={{ marginTop: 12 }}>
+					<button onClick={retryLogin} style={{ padding: "8px 14px", borderRadius: 6, background: "#00c300", color: "#fff", fontWeight: 700 }}>ログインを再試行</button>
+				</div>
+				<div style={{ marginTop: 10, fontSize: 12, color: "#666" }}>
+					URL: {typeof window !== "undefined" ? window.location.href : ""}
+				</div>
 			</div>
 		);
 	}
@@ -565,7 +646,7 @@ export default function StampRallyPage() {
 				)}
 				<div className="progress-summary">
 					<p className="stamp-count">
-						現在のスタンプ: <span className="count-large">{stampedNumbers.length}</span> / {totalStamps}
+						現在のスタンプ: <span className="count-large">{stampedNumbers.length}</span> / 22
 					</p>
 					{nextPrizeNumber && (
 						<p className="next-prize-info">
@@ -583,9 +664,11 @@ export default function StampRallyPage() {
 								type="button"
 								onClick={() => {
 									if (!achieved || claimed) return;
+									console.log('GET button clicked for prize:', num);
 									setCurrentPrizeNumber(num);
 									setStaffPrize(`${num === 22 ? "❓" : "🎁"} ギフト（${num}個目）`);
 									setShowStaffConfirm(true);
+									console.log('showStaffConfirm set to true');
 								}}
 								className={`prize-progress ${achieved ? "prize-done" : ""}`}
 								style={{ cursor: achieved && !claimed ? "pointer" : "default" }}
@@ -599,7 +682,7 @@ export default function StampRallyPage() {
 			</div>
 			{/* ここからスタンプグリッド */}
 			<div className="stamp-container"> 
-				{Array.from({ length: totalStamps }, (_, i) => i + 1).map(num => {
+				{Array.from({ length: 22 }, (_, i) => i + 1).map(num => {
 					const isStamped = stampedNumbers.includes(num);
 					const isSpecial = specialStampSet.has(num);
 					return (
@@ -619,7 +702,7 @@ export default function StampRallyPage() {
 						</div>
 					);
 				})}
-				{/* 日程表ボタン - スタンプ23の右側 */}
+				{/* 日程表ボタン - スタンプ22の右側 */}
 				<button 
 					className="schedule-btn-in-grid" 
 					onClick={() => window.open('https://www.kcbbf.jp/index/show-pdf/url/aHR0cHM6Ly9kMmEwdjF4N3F2eGw2Yy5jbG91ZGZyb250Lm5ldC9maWxlcy9zcG9ocF9rY2JiZi9nYW1lX2NhdGVnb3J5LzY4OTMxYzEzMjk5ZmQucGRm', '_blank')}
@@ -634,19 +717,21 @@ export default function StampRallyPage() {
 			<div style={{ maxWidth: 420, margin: "20px auto 0", padding: "0 14px" }}>
 				<div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, color: "#866522", fontWeight: 700 }}>
 					<span>進捗</span>
-					<span style={{ marginLeft: "auto" }}>{stampedNumbers.length}/{totalStamps}</span>
+					<span style={{ marginLeft: "auto" }}>{stampedNumbers.length}/22</span>
 				</div>
 				<div style={{ height: 10, background: "#f1f3f5", borderRadius: 6, overflow: "hidden", boxShadow: "inset 0 1px 2px #0001" }}>
-					<div style={{ width: `${Math.min(100, Math.round((stampedNumbers.length/totalStamps)*100))}%`, height: "100%", background: "linear-gradient(90deg,#ffd700,#a97b2c)", transition: "width .3s ease" }} />
+					<div style={{ width: `${Math.min(100, Math.round((stampedNumbers.length/22)*100))}%`, height: "100%", background: "linear-gradient(90deg,#ffd700,#a97b2c)", transition: "width .3s ease" }} />
 				</div>
 			</div>
 			{/* エラー/通知はモーダル風に */}
 			{outputMessage && (
-				<div className="toast" onClick={() => setOutputMessage("")}> 
+				<div className="toast" onClick={() => setOutputMessage("")} style={{ top: "50%", bottom: "auto", transform: "translateX(-50%) translateY(-50%)" }}> 
 					<div className="toast-body" style={{ whiteSpace: "pre-line" }}>{outputMessage}</div>
 					<div className="toast-action">タップで閉じる</div>
 				</div>
 			)}
+			
+
 			{showStaffConfirm && (
 				<div className="staff-confirm-container" onClick={()=>setShowStaffConfirm(false)}>
 					<div className="confirm-label">
@@ -746,7 +831,7 @@ export default function StampRallyPage() {
 				.admin-toggle-btn { background-color: #f8f9fa; color: #6c757d; border: 1px solid #dee2e6; padding: 8px 16px; font-size: 14px; }
 				.admin-controls { margin: 0 auto; padding: 15px; background: #f1f3f5; border-radius: 8px; border: 1px solid #dee2e6; max-width: 300px; text-align: center; display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
 				.admin-btn { background-color: #6c757d; color: white; padding: 8px 16px; font-size: 14px; border-radius: 5px; }
-				.staff-confirm-container { margin: 24px auto 0 auto; max-width: 480px; background: #fffbe7; border: 2px solid #ffd700cc; border-radius: 12px; box-shadow: 0 4px 16px #ffd70022; padding: 28px 20px 22px 20px; color: #a97c2c; font-size: 1.22em; font-weight: bold; text-align: center; z-index: 12; }
+				.staff-confirm-container { position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%); margin: 24px auto 0 auto; max-width: 480px; background: #fffbe7; border: 2px solid #ffd700cc; border-radius: 12px; box-shadow: 0 4px 16px #ffd70022; padding: 28px 20px 22px 20px; color: #a97c2c; font-size: 1.22em; font-weight: bold; text-align: center; z-index: 12; }
 				.staff-confirm-container .confirm-label { margin-bottom: 14px; font-size: 0.85em; font-weight: bold; color: #b88c00; letter-spacing: 1px; text-shadow: 0 2px 12px #fffbe7; line-height: 1.6; }
 				.staff-confirm-container .confirm-label span { white-space: nowrap; }
 				.staff-confirm-container button { margin-top: 10px; background: #00c300; color: #fff; font-size: 1.1em; border-radius: 8px; border: none; padding: 10px 28px; font-weight: bold; cursor: pointer; box-shadow: 0 2px 12px #c3e6cb88; }
@@ -768,9 +853,57 @@ export default function StampRallyPage() {
 				.toast { position: fixed; left: 50%; transform: translateX(-50%); bottom: 18px; background: #fff; color: #333; border-radius: 10px; box-shadow: 0 10px 30px #0002; z-index: 50; padding: 12px 14px; border: 1px solid #eee; min-width: 260px; max-width: 90%; }
 				.toast-body { font-weight: 600; }
 				.toast-action { font-size: 12px; color: #666; margin-top: 6px; }
+				
+				/* 特別スタンプ演出 */
+				.special-stamp-celebration { animation: celebration 3s ease-out forwards; }
+				.celebration-text { 
+					background: linear-gradient(45deg, #ffd700, #ffed4e, #ffd700); 
+					color: #b8860b; 
+					padding: 20px 30px; 
+					border-radius: 15px; 
+					font-size: 1.3em; 
+					font-weight: bold; 
+					text-align: center; 
+					box-shadow: 0 0 30px #ffd700, 0 0 60px #ffd700; 
+					border: 3px solid #ffd700;
+					text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+				}
+				@keyframes celebration {
+					0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+					20% { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+					40% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+					80% { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+					100% { transform: translate(-50%, -50%) scale(0.8); opacity: 0; }
+				}
+				
+				/* 紙吹雪エフェクト */
+				.confetti {
+					position: fixed;
+					top: 0;
+					left: 0;
+					width: 100%;
+					height: 100%;
+					pointer-events: none;
+					z-index: 1000;
+				}
+				.confetti-piece {
+					position: absolute;
+					width: 8px;
+					height: 8px;
+					animation: confetti-fall 2s linear forwards;
+				}
+				@keyframes confetti-fall {
+					0% {
+						transform: translateY(-100vh) rotate(0deg);
+						opacity: 1;
+					}
+					100% {
+						transform: translateY(100vh) rotate(360deg);
+						opacity: 0;
+					}
+				}
 			`}</style>
 		</>
 	);
 }
-
 
