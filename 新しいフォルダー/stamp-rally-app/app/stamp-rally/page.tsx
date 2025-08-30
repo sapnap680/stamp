@@ -96,7 +96,7 @@ declare global {
 }
 const liffId = "2007663892-mQOQRy2z";
 
-type StampHistory = { stampNumber: number; venueName: string; date: string; source: string };
+type StampHistory = { stampNumber: number; venueName: string; date: string; source: string; qrId?: string };
 // Firestore へ保存するキーは LINE userId を想定
 
 
@@ -290,7 +290,7 @@ export default function StampRallyPage() {
 				if (snap.exists()) {
 					const firestoreData = snap.data() as { history?: StampHistory[] };
 					if (firestoreData.history) {
-						// Firestoreの履歴で重複チェック
+						// QRコードの重複チェック（同じQRを2回読み取れないように）
 						const alreadyScanned = firestoreData.history.some((h: any) => h.stampNumber === qrStampNumber);
 						if (alreadyScanned) {
 							setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
@@ -301,7 +301,8 @@ export default function StampRallyPage() {
 			}
 		} catch (err) {
 			// エラーの場合はローカルでチェック
-			if (stampedNumbers.includes(qrStampNumber)) {
+			const alreadyScanned = history.some((h: any) => h.stampNumber === qrStampNumber);
+			if (alreadyScanned) {
 				setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
 				return;
 			}
@@ -309,8 +310,15 @@ export default function StampRallyPage() {
 		
 		const restriction = stampDateRestrictions[qrStampNumber];
 		if (restriction) {
+			// 日本時間で現在の日付を取得
 			const now = new Date();
-			const todayStr = now.toISOString().slice(0, 10);
+			const japanDate = new Intl.DateTimeFormat('ja-JP', {
+				timeZone: 'Asia/Tokyo',
+				year: 'numeric',
+				month: '2-digit',
+				day: '2-digit'
+			}).format(now);
+			const todayStr = japanDate.replace(/\//g, '-');
 			if (todayStr > restriction.end) {
 				setOutputMessage("日付が過ぎています");
 				return;
@@ -340,12 +348,20 @@ export default function StampRallyPage() {
 			}
 			
 			const nowStr = new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
-			const newEntry: StampHistory = { stampNumber: qrStampNumber, venueName: closestVenue.name, date: nowStr, source: `QR / ${prof.displayName || "ゲスト"}` };
-			setStampedNumbers([...stampedNumbers, qrStampNumber]);
+			// 押した順序でスタンプ番号を付与（履歴の長さ + 1）
+			const nextStampNumber = stampedNumbers.length + 1;
+			const newEntry: StampHistory = { 
+				stampNumber: nextStampNumber, 
+				venueName: closestVenue.name, 
+				date: nowStr, 
+				source: `QR / ${prof.displayName || "ゲスト"}`,
+				qrId: qrValue  // QRコードのIDを保存
+			};
+			setStampedNumbers([...stampedNumbers, nextStampNumber]);
 			setHistory([...history, newEntry]);
 			
-			// 特別スタンプの演出
-			if (specialStampNumbers.includes(qrStampNumber)) {
+			// 特別スタンプの演出（押した順序のスタンプ番号で判定）
+			if (specialStampNumbers.includes(nextStampNumber)) {
 				showConfetti();
 			}
 
@@ -363,7 +379,7 @@ export default function StampRallyPage() {
 			} catch (err) {
 				// エラーハンドリング
 			}
-			setOutputMessage(`スタンプ${qrStampNumber}を獲得！\n（会場: ${closestVenue.name}）`);
+			setOutputMessage(`スタンプ${nextStampNumber}を獲得！\n（会場: ${closestVenue.name}）`);
 
 		} catch (e: any) {
 			setOutputMessage(e.message || "位置情報取得エラー");
