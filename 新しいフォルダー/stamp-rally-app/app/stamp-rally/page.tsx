@@ -352,8 +352,10 @@ export default function StampRallyPage() {
 			const japanTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
 			const nowStr = japanTime.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 			
-			// 押した順序でスタンプ番号を付与（Firestoreの履歴の長さ + 1）
-			let currentHistoryLength = stampedNumbers.length;
+			// Firestoreから最新の履歴を取得して、新しいスタンプを追加
+			let currentHistory: StampHistory[] = history;
+			let currentStampedNumbers: number[] = stampedNumbers;
+			
 			try {
 				if (profile?.userId) {
 					const ref = doc(db, "stamp_rallies", profile.userId);
@@ -361,14 +363,17 @@ export default function StampRallyPage() {
 					if (snap.exists()) {
 						const firestoreData = snap.data() as { history?: StampHistory[] };
 						if (firestoreData.history) {
-							currentHistoryLength = firestoreData.history.length;
+							currentHistory = firestoreData.history;
+							currentStampedNumbers = firestoreData.history.map(h => h.stampNumber);
 						}
 					}
 				}
 			} catch (err) {
-				// エラーの場合はローカルの長さを使用
+				// エラーの場合はローカルのデータを使用
 			}
-			const nextStampNumber = currentHistoryLength + 1;
+			
+			// 押した順序でスタンプ番号を付与（現在の履歴の長さ + 1）
+			const nextStampNumber = currentHistory.length + 1;
 			const newEntry: StampHistory = { 
 				stampNumber: nextStampNumber, 
 				venueName: closestVenue.name, 
@@ -377,8 +382,13 @@ export default function StampRallyPage() {
 				qrId: qrValue,  // QRコードのIDを保存
 				timestamp: japanTime  // JSTのDateオブジェクトを保存
 			};
-			setStampedNumbers([...stampedNumbers, nextStampNumber]);
-			setHistory([...history, newEntry]);
+			
+			// 最新の履歴に新しいスタンプを追加
+			const updatedHistory = [...currentHistory, newEntry];
+			const updatedStampedNumbers = [...currentStampedNumbers, nextStampNumber];
+			
+			setStampedNumbers(updatedStampedNumbers);
+			setHistory(updatedHistory);
 			
 			// 特別スタンプの演出（押した順序のスタンプ番号で判定）
 			if (specialStampNumbers.includes(nextStampNumber)) {
