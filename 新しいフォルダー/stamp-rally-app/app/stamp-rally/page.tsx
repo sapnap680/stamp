@@ -352,8 +352,23 @@ export default function StampRallyPage() {
 			const japanTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
 			const nowStr = japanTime.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
 			
-			// 押した順序でスタンプ番号を付与（履歴の長さ + 1）
-			const nextStampNumber = stampedNumbers.length + 1;
+			// 押した順序でスタンプ番号を付与（Firestoreの履歴の長さ + 1）
+			let currentHistoryLength = stampedNumbers.length;
+			try {
+				if (profile?.userId) {
+					const ref = doc(db, "stamp_rallies", profile.userId);
+					const snap = await getDoc(ref);
+					if (snap.exists()) {
+						const firestoreData = snap.data() as { history?: StampHistory[] };
+						if (firestoreData.history) {
+							currentHistoryLength = firestoreData.history.length;
+						}
+					}
+				}
+			} catch (err) {
+				// エラーの場合はローカルの長さを使用
+			}
+			const nextStampNumber = currentHistoryLength + 1;
 			const newEntry: StampHistory = { 
 				stampNumber: nextStampNumber, 
 				venueName: closestVenue.name, 
