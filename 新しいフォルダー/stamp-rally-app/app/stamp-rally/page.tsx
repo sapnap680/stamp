@@ -228,8 +228,40 @@ export default function StampRallyPage() {
 		async function loadFromFirestore() {
 			if (!profile?.userId) return;
 			try {
+				// デバッグ: Firebase設定を確認
+				console.log("=== Firestore Debug Info ===");
+				console.log("Environment Variables:");
+				console.log("- NEXT_PUBLIC_FIREBASE_PROJECT_ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
+				console.log("- NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
+				console.log("- NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:", process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
+				console.log("User ID:", profile.userId);
+				console.log("Profile object:", profile);
+				console.log("Collection path:", `stamp_rallies/${profile.userId}`);
+				
+				// スマホ用デバッグ: アラートで情報表示
+				const debugInfo = `
+Firebase Debug Info:
+Project ID: ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}
+Storage Bucket: ${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
+Auth Domain: ${process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
+User ID: ${profile.userId}
+Collection: stamp_rallies/${profile.userId}
+				`;
+				alert(debugInfo);
+				
 				const ref = doc(db, "stamp_rallies", profile.userId);
 				const snap = await getDoc(ref);
+				console.log("Firestore document exists:", snap.exists());
+				console.log("Firestore data:", snap.data());
+				
+				// スマホ用デバッグ: Firestore接続結果をアラートで表示
+				const firestoreResult = `
+Firestore Connection Result:
+Document exists: ${snap.exists()}
+Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
+				`;
+				alert(firestoreResult);
+				
 				if (snap.exists()) {
 					const data = snap.data() as { history?: StampHistory[] };
 					if (data.history && data.history.length > 0) {
@@ -238,12 +270,14 @@ export default function StampRallyPage() {
 						setStampedNumbers(data.history.map(h => h.stampNumber));
 						localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
 						localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
+						console.log("Loaded from Firestore:", data.history.length, "stamps");
 					} else {
 						// Firestoreが空の場合は、ローカルもクリア
 						setHistory([]);
 						setStampedNumbers([]);
 						localStorage.removeItem("stamps_v1");
 						localStorage.removeItem("stamp_history_v1");
+						console.log("Firestore document is empty");
 					}
 				} else {
 					// Firestoreにドキュメントが存在しない場合、ローカルもクリア
@@ -251,6 +285,7 @@ export default function StampRallyPage() {
 					setStampedNumbers([]);
 					localStorage.removeItem("stamps_v1");
 					localStorage.removeItem("stamp_history_v1");
+					console.log("Firestore document does not exist");
 				}
 			} catch (err) {
 				console.error("Failed to load from Firestore", err);
@@ -307,6 +342,12 @@ export default function StampRallyPage() {
 		// 履歴から同じQRコードが既に読み取られているかチェック
 		const alreadyScanned = history.some((h: any) => h.source.includes(`QR`) && h.stampNumber === qrStampNumber);
 		if (alreadyScanned) {
+			setOutputMessage(`このQRコードは既に読み取られています`);
+			return;
+		}
+		
+		// 追加の重複チェック：同じQRコード番号が既に獲得済みかチェック
+		if (stampedNumbers.includes(qrStampNumber)) {
 			setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
 			return;
 		}
@@ -344,13 +385,12 @@ export default function StampRallyPage() {
 			}
 			
 			const nowStr = new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
-			const nextStampNumber = stampedNumbers.length + 1;
-			const newEntry: StampHistory = { stampNumber: nextStampNumber, venueName: closestVenue.name, date: nowStr, source: `QR / ${prof.displayName || "ゲスト"}` };
-			setStampedNumbers([...stampedNumbers, nextStampNumber]);
+			const newEntry: StampHistory = { stampNumber: qrStampNumber, venueName: closestVenue.name, date: nowStr, source: `QR / ${prof.displayName || "ゲスト"}` };
+			setStampedNumbers([...stampedNumbers, qrStampNumber]);
 			setHistory([...history, newEntry]);
 			
 			// 特別スタンプの演出
-			if (specialStampNumbers.includes(nextStampNumber)) {
+			if (specialStampNumbers.includes(qrStampNumber)) {
 				showConfetti();
 			}
 
@@ -368,7 +408,7 @@ export default function StampRallyPage() {
 			} catch (err) {
 				console.error("Failed to sync Firestore", err);
 			}
-			setOutputMessage(`スタンプ${nextStampNumber}を獲得！\n（会場: ${closestVenue.name}）`);
+			setOutputMessage(`スタンプ${qrStampNumber}を獲得！\n（会場: ${closestVenue.name}）`);
 
 		} catch (e: any) {
 			setOutputMessage(e.message || "位置情報取得エラー");

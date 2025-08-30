@@ -13,4 +13,11 @@ const firebaseConfig = {
 
 const app = getApps().length ? getApp() : initializeApp(firebaseConfig);
 
+// デバッグ: Firebase設定を確認
+console.log("=== Firebase Config Debug ===");
+console.log("Project ID:", firebaseConfig.projectId);
+console.log("Storage Bucket:", firebaseConfig.storageBucket);
+console.log("Auth Domain:", firebaseConfig.authDomain);
+console.log("Full config:", firebaseConfig);
+
 export const db = getFirestore(app);
