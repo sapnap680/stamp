@@ -233,20 +233,11 @@ export default function StampRallyPage() {
 				if (snap.exists()) {
 					const data = snap.data() as { history?: StampHistory[] };
 					if (data.history && data.history.length > 0) {
-						// Firestoreにデータがある場合、ローカルと比較
-						const localStamps = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
-						const localHistory = JSON.parse(localStorage.getItem("stamp_history_v1") || "[]");
-						
-						// Firestoreの方が新しい場合は同期
-						if (data.history.length > localHistory.length) {
-							setHistory(data.history);
-							setStampedNumbers(data.history.map(h => h.stampNumber));
-							localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
-							localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
-						} else {
-							// ローカルの方が新しい場合、一斉同期
-							await syncOfflineData(localHistory, data.history);
-						}
+						// Firestoreのデータを強制的に使用
+						setHistory(data.history);
+						setStampedNumbers(data.history.map(h => h.stampNumber));
+						localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
+						localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
 					} else {
 						// Firestoreが空の場合は、ローカルもクリア
 						setHistory([]);
@@ -313,8 +304,10 @@ export default function StampRallyPage() {
 		}
 		
 		// 重複チェック（同じQRコードを再度読み取った場合のみ）
-		if (stampedNumbers.includes(qrStampNumber)) {
-			setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
+		// 履歴から同じQRコードが既に読み取られているかチェック
+		const alreadyScanned = history.some(h => h.source.includes(`QR`) && h.venueName === closestVenue?.name);
+		if (alreadyScanned) {
+			setOutputMessage(`このQRコードは既に読み取られています`);
 			return;
 		}
 		
