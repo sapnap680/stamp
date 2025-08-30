@@ -133,16 +133,7 @@ export default function StampRallyPage() {
 	// 特別スタンプ演出用
 	const [specialStampEffect, setSpecialStampEffect] = useState<number | null>(null);
 	
-	// 受取済み状態をlocalStorageから読み込み
-	useEffect(() => {
-		const claimed = JSON.parse(localStorage.getItem("claimed_prizes_v1") || "[]");
-		setClaimedPrizeNumbers(claimed);
-	}, []);
-	
-	// 受取済み状態をlocalStorageに保存
-	useEffect(() => {
-		localStorage.setItem("claimed_prizes_v1", JSON.stringify(claimedPrizeNumbers));
-	}, [claimedPrizeNumbers]);
+	// 受取済み状態はFirestoreから管理（ローカルストレージ削除）
 
 	// 特別スタンプの判定を最適化
 	const specialStampSet = useMemo(() => new Set(specialStampNumbers), []);
@@ -182,7 +173,7 @@ export default function StampRallyPage() {
 			} catch (e: any) {
 				setLiffError("LINEログイン必須です。再読込してください。");
 				setLiffLoading(false);
-				console.error(e);
+				// エラーハンドリング
 			}
 		}
 		initLiff();
@@ -207,88 +198,40 @@ export default function StampRallyPage() {
 			const redirectUri = window.location.origin + basePath + (stamp ? `?stamp=${encodeURIComponent(stamp)}` : "");
 			window.liff.login({ redirectUri });
 		} catch (e) {
-			console.error(e);
+			// エラーハンドリング
 		}
 	}
 
-	useEffect(() => {
-		const stamped = JSON.parse(localStorage.getItem("stamps_v1") || "[]");
-		const his = JSON.parse(localStorage.getItem("stamp_history_v1") || "[]");
-		setStampedNumbers(stamped);
-		setHistory(his);
-	}, []);
-
-	useEffect(() => {
-		localStorage.setItem("stamps_v1", JSON.stringify(stampedNumbers));
-		localStorage.setItem("stamp_history_v1", JSON.stringify(history));
-	}, [stampedNumbers, history]);
+	// ローカルストレージは削除（Firestoreのみ使用）
 
 	// Firestoreから履歴読み込み（ログイン後）
 	useEffect(() => {
 		async function loadFromFirestore() {
 			if (!profile?.userId) return;
 			try {
-				// デバッグ: Firebase設定を確認
-				console.log("=== Firestore Debug Info ===");
-				console.log("Environment Variables:");
-				console.log("- NEXT_PUBLIC_FIREBASE_PROJECT_ID:", process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
-				console.log("- NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET:", process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
-				console.log("- NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN:", process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
-				console.log("User ID:", profile.userId);
-				console.log("Profile object:", profile);
-				console.log("Collection path:", `stamp_rallies/${profile.userId}`);
-				
-				// スマホ用デバッグ: アラートで情報表示
-				const debugInfo = `
-Firebase Debug Info:
-Project ID: ${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID}
-Storage Bucket: ${process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET}
-Auth Domain: ${process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN}
-User ID: ${profile.userId}
-Collection: stamp_rallies/${profile.userId}
-				`;
-				alert(debugInfo);
+				// 本番用：デバッグコード削除
 				
 				const ref = doc(db, "stamp_rallies", profile.userId);
 				const snap = await getDoc(ref);
-				console.log("Firestore document exists:", snap.exists());
-				console.log("Firestore data:", snap.data());
-				
-				// スマホ用デバッグ: Firestore接続結果をアラートで表示
-				const firestoreResult = `
-Firestore Connection Result:
-Document exists: ${snap.exists()}
-Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
-				`;
-				alert(firestoreResult);
 				
 				if (snap.exists()) {
 					const data = snap.data() as { history?: StampHistory[] };
 					if (data.history && data.history.length > 0) {
-						// Firestoreのデータを強制的に使用
+						// Firestoreのデータを使用
 						setHistory(data.history);
 						setStampedNumbers(data.history.map(h => h.stampNumber));
-						localStorage.setItem("stamps_v1", JSON.stringify(data.history.map(h => h.stampNumber)));
-						localStorage.setItem("stamp_history_v1", JSON.stringify(data.history));
-						console.log("Loaded from Firestore:", data.history.length, "stamps");
 					} else {
-						// Firestoreが空の場合は、ローカルもクリア
+						// Firestoreが空の場合
 						setHistory([]);
 						setStampedNumbers([]);
-						localStorage.removeItem("stamps_v1");
-						localStorage.removeItem("stamp_history_v1");
-						console.log("Firestore document is empty");
 					}
 				} else {
-					// Firestoreにドキュメントが存在しない場合、ローカルもクリア
+					// Firestoreにドキュメントが存在しない場合
 					setHistory([]);
 					setStampedNumbers([]);
-					localStorage.removeItem("stamps_v1");
-					localStorage.removeItem("stamp_history_v1");
-					console.log("Firestore document does not exist");
 				}
 			} catch (err) {
-				console.error("Failed to load from Firestore", err);
+				// エラーハンドリング
 			}
 		}
 		loadFromFirestore();
@@ -313,10 +256,10 @@ Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
 			if (newEntries.length > 0) {
 				// 一斉送信
 				await updateDoc(ref, { history: arrayUnion(...newEntries) });
-				console.log(`${newEntries.length}件のオフラインデータを同期しました`);
+				// オフラインデータ同期完了
 			}
 		} catch (err) {
-			console.error("Failed to sync offline data", err);
+			// エラーハンドリング
 		}
 	}
 
@@ -338,18 +281,30 @@ Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
 			return;
 		}
 		
-		// 重複チェック（同じQRコードを再度読み取った場合のみ）
-		// 履歴から同じQRコードが既に読み取られているかチェック
-		const alreadyScanned = history.some((h: any) => h.source.includes(`QR`) && h.stampNumber === qrStampNumber);
-		if (alreadyScanned) {
-			setOutputMessage(`このQRコードは既に読み取られています`);
-			return;
-		}
-		
-		// 追加の重複チェック：同じQRコード番号が既に獲得済みかチェック
-		if (stampedNumbers.includes(qrStampNumber)) {
-			setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
-			return;
+		// Firestoreベースの重複チェック
+		// まずFirestoreから最新の履歴を取得して重複チェック
+		try {
+			if (profile?.userId) {
+				const ref = doc(db, "stamp_rallies", profile.userId);
+				const snap = await getDoc(ref);
+				if (snap.exists()) {
+					const firestoreData = snap.data() as { history?: StampHistory[] };
+					if (firestoreData.history) {
+						// Firestoreの履歴で重複チェック
+						const alreadyScanned = firestoreData.history.some((h: any) => h.stampNumber === qrStampNumber);
+						if (alreadyScanned) {
+							setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
+							return;
+						}
+					}
+				}
+			}
+		} catch (err) {
+			// エラーの場合はローカルでチェック
+			if (stampedNumbers.includes(qrStampNumber)) {
+				setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
+				return;
+			}
 		}
 		
 		const restriction = stampDateRestrictions[qrStampNumber];
@@ -406,7 +361,7 @@ Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
 					}
 				}
 			} catch (err) {
-				console.error("Failed to sync Firestore", err);
+				// エラーハンドリング
 			}
 			setOutputMessage(`スタンプ${qrStampNumber}を獲得！\n（会場: ${closestVenue.name}）`);
 
@@ -481,7 +436,7 @@ Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
 				}
 			}
 		} catch (err) {
-			console.error("Failed to sync Firestore (admin)", err);
+			// エラーハンドリング
 		}
 		setOutputMessage(`スタンプ${nextStamp}を追加しました（会場: ${venueNameForAdmin}）`);
 	}
@@ -521,7 +476,7 @@ Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
 				}
 			}
 		} catch (err) {
-			console.error("Failed to sync Firestore (delete)", err);
+			// エラーハンドリング
 		}
 		
 		setOutputMessage(`スタンプ${last}を削除しました`);
@@ -539,9 +494,6 @@ Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
 		setStampedNumbers([]);
 		setHistory([]);
 		setClaimedPrizeNumbers([]);
-		localStorage.removeItem("stamps_v1");
-		localStorage.removeItem("stamp_history_v1");
-		localStorage.removeItem("claimed_prizes_v1");
 		// Firestoreからも削除
 		try {
 			if (profile?.userId) {
@@ -549,7 +501,7 @@ Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
 				await updateDoc(ref, { history: [] });
 			}
 		} catch (err) {
-			console.error("Failed to reset Firestore", err);
+			// エラーハンドリング
 		}
 		
 		setOutputMessage("全てのスタンプをリセットしました");
@@ -697,11 +649,9 @@ Data: ${snap.exists() ? JSON.stringify(snap.data(), null, 2) : 'No data'}
 								type="button"
 								onClick={() => {
 									if (!achieved || claimed) return;
-									console.log('GET button clicked for prize:', num);
 									setCurrentPrizeNumber(num);
 									setStaffPrize(`${num === 22 ? "❓" : "🎁"} ギフト（${num}個目）`);
 									setShowStaffConfirm(true);
-									console.log('showStaffConfirm set to true');
 								}}
 								className={`prize-progress ${achieved ? "prize-done" : ""}`}
 								style={{ cursor: achieved && !claimed ? "pointer" : "default" }}
