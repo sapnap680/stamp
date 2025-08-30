@@ -305,9 +305,9 @@ export default function StampRallyPage() {
 		
 		// 重複チェック（同じQRコードを再度読み取った場合のみ）
 		// 履歴から同じQRコードが既に読み取られているかチェック
-		const alreadyScanned = history.some(h => h.source.includes(`QR`) && h.venueName === closestVenue?.name);
+		const alreadyScanned = history.some((h: any) => h.source.includes(`QR`) && h.stampNumber === qrStampNumber);
 		if (alreadyScanned) {
-			setOutputMessage(`このQRコードは既に読み取られています`);
+			setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
 			return;
 		}
 		
