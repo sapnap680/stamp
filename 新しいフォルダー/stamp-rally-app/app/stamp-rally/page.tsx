@@ -96,7 +96,7 @@ declare global {
 }
 const liffId = "2007663892-mQOQRy2z";
 
-type StampHistory = { stampNumber: number; venueName: string; date: string; source: string; qrId?: string };
+type StampHistory = { stampNumber: number; venueName: string; date: string; source: string; qrId?: string; timestamp?: Date };
 // Firestore へ保存するキーは LINE userId を想定
 
 
@@ -347,7 +347,11 @@ export default function StampRallyPage() {
 				return;
 			}
 			
-			const nowStr = new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+			// 日本時間で現在の日時を取得
+			const now = new Date();
+			const japanTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+			const nowStr = japanTime.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+			
 			// 押した順序でスタンプ番号を付与（履歴の長さ + 1）
 			const nextStampNumber = stampedNumbers.length + 1;
 			const newEntry: StampHistory = { 
@@ -355,7 +359,8 @@ export default function StampRallyPage() {
 				venueName: closestVenue.name, 
 				date: nowStr, 
 				source: `QR / ${prof.displayName || "ゲスト"}`,
-				qrId: qrValue  // QRコードのIDを保存
+				qrId: qrValue,  // QRコードのIDを保存
+				timestamp: japanTime  // JSTのDateオブジェクトを保存
 			};
 			setStampedNumbers([...stampedNumbers, nextStampNumber]);
 			setHistory([...history, newEntry]);
@@ -373,7 +378,7 @@ export default function StampRallyPage() {
 					if (snap.exists()) {
 						await updateDoc(ref, { history: arrayUnion(newEntry) });
 					} else {
-						await setDoc(ref, { history: [newEntry], createdAt: new Date() });
+						await setDoc(ref, { history: [newEntry], createdAt: japanTime });
 					}
 				}
 			} catch (err) {
@@ -438,7 +443,18 @@ export default function StampRallyPage() {
 			}
 		} catch {}
 
-		const adminEntry: StampHistory = { stampNumber: nextStamp, venueName: venueNameForAdmin, date: new Date().toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" }), source: "admin" };
+		// 日本時間で現在の日時を取得
+		const now = new Date();
+		const japanTime = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Tokyo" }));
+		const nowStr = japanTime.toLocaleString("ja-JP", { timeZone: "Asia/Tokyo" });
+		
+		const adminEntry: StampHistory = { 
+			stampNumber: nextStamp, 
+			venueName: venueNameForAdmin, 
+			date: nowStr, 
+			source: "admin",
+			timestamp: japanTime  // JSTのDateオブジェクトを保存
+		};
 		setStampedNumbers([...stampedNumbers, nextStamp]);
 		setHistory([...history, adminEntry]);
 		try {
@@ -448,7 +464,7 @@ export default function StampRallyPage() {
 				if (snap.exists()) {
 					await updateDoc(ref, { history: arrayUnion(adminEntry) });
 				} else {
-					await setDoc(ref, { history: [adminEntry], createdAt: new Date() });
+					await setDoc(ref, { history: [adminEntry], createdAt: japanTime });
 				}
 			}
 		} catch (err) {
