@@ -291,7 +291,7 @@ export default function StampRallyPage() {
 					const firestoreData = snap.data() as { history?: StampHistory[] };
 					if (firestoreData.history) {
 						// QRコードの重複チェック（同じQRを2回読み取れないように）
-						const alreadyScanned = firestoreData.history.some((h: any) => h.stampNumber === qrStampNumber);
+						const alreadyScanned = firestoreData.history.some((h: any) => h.qrId === qrValue);
 						if (alreadyScanned) {
 							setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
 							return;
@@ -301,7 +301,7 @@ export default function StampRallyPage() {
 			}
 		} catch (err) {
 			// エラーの場合はローカルでチェック
-			const alreadyScanned = history.some((h: any) => h.stampNumber === qrStampNumber);
+			const alreadyScanned = history.some((h: any) => h.qrId === qrValue);
 			if (alreadyScanned) {
 				setOutputMessage(`スタンプ${qrStampNumber}は既に獲得済みです`);
 				return;
